@@ -82,7 +82,7 @@ func (s *SubService) GetSubs(subId string, host string) ([]string, string, error
 
 		for _, client := range clients {
 			if client.Enable && client.SubID == subId {
-				clientsData = append(clientsData, clientData{inbound: inbound, client: client})
+				clientsData = append(clientsData, clientData{inbound: inbound, client: &client})
 				clientTraffics = append(clientTraffics, s.getClientTraffics(inbound.ClientStats, client.Email))
 			}
 		}

@@ -74,9 +74,15 @@ func (s *SubJsonService) GetJson(subId string, host string) (string, string, err
 	}
 
 	var header string
-	var traffic xray.ClientTraffic
 	var clientTraffics []xray.ClientTraffic
 	var configArray []json_util.RawMessage
+
+	// First, collect all clients and their traffic stats
+	type clientData struct {
+		inbound *model.Inbound
+		client  model.Client
+	}
+	var clientsData []clientData
 
 	// Prepare Inbounds
 	for _, inbound := range inbounds {
@@ -98,19 +104,24 @@ func (s *SubJsonService) GetJson(subId string, host string) (string, string, err
 
 		for _, client := range clients {
 			if client.Enable && client.SubID == subId {
+				clientsData = append(clientsData, clientData{inbound: inbound, client: client})
 				clientTraffics = append(clientTraffics, s.SubService.getClientTraffics(inbound.ClientStats, client.Email))
-				newConfigs := s.getConfig(inbound, client, host)
-				configArray = append(configArray, newConfigs...)
 			}
 		}
 	}
 
-	if len(configArray) == 0 {
+	if len(clientsData) == 0 {
 		return "", "", nil
 	}
 
 	// Prepare statistics
-	traffic = CalculateClientTraffic(clientTraffics)
+	traffic := CalculateClientTraffic(clientTraffics)
+
+	// Now generate configs
+	for _, data := range clientsData {
+		newConfigs := s.getConfig(data.inbound, data.client, host, &traffic)
+		configArray = append(configArray, newConfigs...)
+	}
 
 	// Combile outbounds
 	var finalJson []byte
@@ -124,7 +135,7 @@ func (s *SubJsonService) GetJson(subId string, host string) (string, string, err
 	return string(finalJson), header, nil
 }
 
-func (s *SubJsonService) getConfig(inbound *model.Inbound, client model.Client, host string) []json_util.RawMessage {
+func (s *SubJsonService) getConfig(inbound *model.Inbound, client model.Client, host string, subTraffic *xray.ClientTraffic) []json_util.RawMessage {
 	var newJsonArray []json_util.RawMessage
 	stream := s.streamData(inbound.StreamSettings)
 
@@ -176,7 +187,7 @@ func (s *SubJsonService) getConfig(inbound *model.Inbound, client model.Client, 
 			newConfigJson[key] = value
 		}
 		newConfigJson["outbounds"] = newOutbounds
-		newConfigJson["remarks"] = s.SubService.genRemark(inbound, client.Email, extPrxy["remark"].(string))
+		newConfigJson["remarks"] = s.SubService.genRemark(inbound, client.Email, extPrxy["remark"].(string), subTraffic)
 
 		newConfig, _ := json.MarshalIndent(newConfigJson, "", "  ")
 		newJsonArray = append(newJsonArray, newConfig)
